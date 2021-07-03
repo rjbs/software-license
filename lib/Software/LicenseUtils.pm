@@ -8,6 +8,7 @@ package Software::LicenseUtils;
 use File::Spec;
 use IO::Dir;
 use Module::Load;
+use JSON::PP;
 
 =method guess_license_from_pod
 
@@ -153,17 +154,46 @@ sub guess_license_from_meta {
   my ($class, $meta_text) = @_;
   die "can't call guess_license_* in scalar context" unless wantarray;
 
-  my ($license_text) = $meta_text =~ m{\b["']?license["']?\s*:\s*["']?([a-z_0-9]+)["']?}gm;
+  my ($license_text) = $meta_text =~ m{\b["']?license["']?\s*:\s*\[?\s*["']?([a-z_0-9]+)["']?}gm or return;
 
-  return unless $license_text and my $license = $meta_keys{ $license_text };
-
-  return map { "Software::License::$_" } sort keys %$license;
+  return map { "Software::License::$_" } sort keys %{$meta_keys{$license_text}};
 }
 
 {
   no warnings 'once';
   *guess_license_from_meta_yml = \&guess_license_from_meta;
 }
+
+=method guess_license_from_meta_json
+
+  my $guesses = Software::LicenseUtils->guess_license_from_meta_json($meta_json);
+
+Given the content of the META.json file found in a CPAN distribution, this
+method makes a guess as to which licenses may apply to the distribution.
+
+It will return a hash reference that contains keys of licenses name and
+values of Software::License classes.
+
+CPAN Meta spec 2.0 allows that the distribution has multiple licenses.
+guess_license_from_meta_json will return a guess to each specified licenses
+in a hash reference format.
+
+=cut
+
+sub guess_license_from_meta_json {
+  my ($class, $meta_json) = @_;
+
+  my $meta = decode_json($meta_json);
+  my @licenses = @{ $meta->{license} } or return;
+
+  my $guesses = {};
+  for my $license ( @licenses ) {
+    $guesses->{$license} = [ Software::LicenseUtils->guess_license_from_meta_key($license, 2) ];
+  }
+
+  return $guesses; 
+}
+
 
 =method guess_license_from_meta_key
 
